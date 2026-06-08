@@ -1,0 +1,484 @@
+% !TEX program = pdflatex
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{bm}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{amsthm}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+\newtheorem{remark}{Remark}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage[font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{cite}
+\usepackage{enumitem}
+\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+
+% ---- Notation helpers ----
+\DeclareMathOperator{\diag}{diag}
+\newcommand{\complexj}{\mathrm{j}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\CC}{\mathbb{C}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\vect}[1]{\bm{#1}}
+\newcommand{\mat}[1]{\bm{#1}}
+\newcommand{\set}[1]{\mathcal{#1}}
+
+\begin{document}
+\appendices
+% ============================================================
+\section{Algorithms for Loop Matrix Construction}
+% ============================================================
+
+\begin{algorithm}[!htbp]
+\caption{Tree-Branch Identification via Weighted Spanning Tree}
+\label{alg:mst}
+\begin{algorithmic}[1]
+\REQUIRE Branch set $\mathcal{B}=\{(i_k,j_k,Z_k)\}_{k=1}^{N_l}$; node set $\mathcal{N}$
+\ENSURE Tree-branch indicator vector $\mathbf{t}\in\{0,1\}^{N_l}$; tree-branch index set $\mathcal{T}$
+
+\STATE Compute the branch weight $w_k \leftarrow |Z_k|$ for each branch $k=1,\ldots,N_l$; if $Z_k=0$, set $w_k \leftarrow 1$.
+\STATE Sort all branches in ascending order of $w_k$.
+\STATE Initialize a disjoint-set data structure over the node set $\mathcal{N}$.
+\STATE Set $\mathcal{T}\leftarrow \emptyset$.
+
+\FOR{each branch $k$ in the sorted order}
+    \STATE Let $(i_k,j_k)$ denote the two terminal nodes of branch $k$.
+    \IF{$\mathrm{Find}(i_k)\neq \mathrm{Find}(j_k)$}
+        \STATE Add branch $k$ to the tree set: $\mathcal{T}\leftarrow \mathcal{T}\cup\{k\}$.
+        \STATE Merge the two connected components: $\mathrm{Union}(i_k,j_k)$.
+        \IF{$|\mathcal{T}|=|\mathcal{N}|-1$}
+            \STATE \textbf{break}
+        \ENDIF
+    \ENDIF
+\ENDFOR
+
+\STATE Initialize $\mathbf{t}\leftarrow \mathbf{0}_{N_l}$.
+\FOR{each branch index $k\in\mathcal{T}$}
+    \STATE Set $t_k\leftarrow 1$.
+\ENDFOR
+
+\RETURN $\mathbf{t},\mathcal{T}$
+\end{algorithmic}
+\end{algorithm}
+
+% Notation: g_k — grounding branch; C — chord set; r — number of independent loops; q — current row index; P_T — unique tree path; L_c — fundamental loop.
+
+\begin{algorithm}[!htbp]
+\caption{Construction of the Loop Matrix $\mathbf{B}$}
+\label{alg:buildB}
+\begin{algorithmic}[1]
+\REQUIRE Number of buses $n$; branch set $\mathcal{B}$ with $m$ branches; spanning-tree branch set $\mathcal{T}$; reference bus indexed by $1$
+\ENSURE Loop matrix $\mathbf{B}$
+
+\STATE Augment the original network by adding one grounding branch $g_k$ for each bus $k=1,\ldots,n$.
+\STATE Define the chord set as $\mathcal{C}=\mathcal{B}\setminus\mathcal{T}$ and the number of independent loops as $r=|\mathcal{C}|+n-1$.
+\STATE Initialize $\mathbf{B}\in\mathbb{Z}^{r\times(m+n)}$ as a zero matrix, and set the row index $q=1$.
+\STATE Construct the tree adjacency structure using the spanning-tree branch set $\mathcal{T}$.
+
+\FOR{each chord branch $c=(u_c,v_c)\in\mathcal{C}$}
+    \STATE Find the unique path $\mathcal{P}_{\mathcal{T}}(u_c,v_c)$ between buses $u_c$ and $v_c$ on the spanning tree.
+    \STATE Construct the fundamental loop $\mathcal{L}_c = c \cup \mathcal{P}_{\mathcal{T}}(u_c,v_c)$.
+    \STATE Assign the entries of the $q$-th row of $\mathbf{B}$ according to the orientations of branches in $\mathcal{L}_c$.
+    \STATE Set $q \leftarrow q+1$.
+\ENDFOR
+
+\FOR{each non-reference bus $k=2,\ldots,n$}
+    \STATE Find the unique path $\mathcal{P}_{\mathcal{T}}(1,k)$ from the reference bus to bus $k$ on the spanning tree.
+    \STATE Construct the grounding loop $\mathcal{L}_k = g_k \cup g_1 \cup \mathcal{P}_{\mathcal{T}}(1,k)$.
+    \STATE Assign the entries of the $q$-th row of $\mathbf{B}$ according to the orientations of branches in $\mathcal{L}_k$.
+    \STATE Set $q \leftarrow q+1$.
+\ENDFOR
+
+\RETURN $\mathbf{B}$
+\end{algorithmic}
+\end{algorithm}
+
+% ============================================================
+\section{Proof of the Unified Topology Representation Stability}
+% ============================================================
+
+% Notation: J_phy — physical-operator Jacobian ∂P/∂Ẑ; v(τ) — loss derivative ∂ℓ/∂P;
+% s — interpolation parameter ∈ [0,1]; s_c — critical breakpoint;
+% K_t — Lipschitz constant under discrete topology; K_p — under unified representation;
+% M_θ — bound on NN Jacobian; M_ℓ, M_phy — spectral norm bounds;
+% L_J, L_P, L_ℓ — Lipschitz constants; λ — damping parameter.
+
+\begin{theorem}[Non-smooth Gradient Variation under Discrete Topology]
+\label{thm:instability}
+If $\mathcal{P}_{\mathcal{G}}$ is defined on topology-dependent discrete graph structures, topology switching may induce non-smooth changes in the operator Jacobian $\partial\mathcal{P}_{\mathcal{G}}/\partial\hat{\mathbf{Z}}$. Under a continuous-relaxation view, the corresponding Lipschitz constant can become unbounded.
+\end{theorem}
+
+\begin{theorem}[Gradient Stability under Unified Representation]
+\label{thm:stability}
+Under the unified topology state vector $\boldsymbol{\tau}\in\mathbb{R}^m$, the gradient deviation is bounded as $\|\mathbf{g}(\boldsymbol{\tau}_1)-\mathbf{g}(\boldsymbol{\tau}_2)\|_2\leq K_{\text{p}}\|\boldsymbol{\tau}_1-\boldsymbol{\tau}_2\|_2$ with
+\begin{equation}
+K_{\text{p}}=M_{\theta}\big(M_{\ell}L_{J}+M_{phy}L_{\ell}L_{\mathcal{P}}\big) 
+\cdot\|\mathbf{A}\|_2^2\,\|\mathbf{y}\|_{\infty}<\infty,
+\end{equation}
+where $M_{\theta}=\sup\|\partial\hat{\mathbf{Z}}/\partial\theta\|_2$, $M_{\ell},M_{phy}$ bound the spectral norms of the loss derivative and physical Jacobian, and $L_{J},L_{\mathcal{P}},L_{\ell}$ are their Lipschitz constants.
+\end{theorem}
+
+\subsection{Proof of Theorem~\ref{thm:instability}}
+
+In conventional PF formulations, a topology switch $\mathcal{G}_1\to\mathcal{G}_2$ inherently alters the network's sparsity patterns. Consider a continuous latent transition path $s\in[0,1]$ interpolating between the two topologies. Since the conventional physical matrices are tied to discrete graph edges, the operator Jacobian $\mathbf{J}_{phy}(s)=\partial\mathcal{P}_{\mathcal{G}}/\partial\hat{\mathbf{Z}}$ cannot be smoothly parameterized. Instead, it evolves as a Heaviside step function $H(s-s_c)$ across a critical structural breakpoint $s_c \in (0,1)$:
+\begin{equation}
+\frac{d\mathbf{J}_{phy}(s)}{ds}\propto\delta(s-s_c),
+\end{equation}
+where $\delta(\cdot)$ is the Dirac delta function.
+
+According to the chain rule, the training gradient along this transition path is given by $\mathbf{g}(s) = \nabla_{\theta}\mathcal{L}(s) = \frac{\partial \ell}{\partial \mathcal{P}} \mathbf{J}_{phy}(s) \frac{\partial \hat{\mathbf{Z}}}{\partial \theta}$. In optimization theory, gradient stability is governed by its Lipschitz constant $K_{\text{t}}$, which is formally defined as the supremum of the gradient's rate of change. Evaluating $K_{\text{t}}$ yields:
+\begin{equation}
+K_{\text{t}} = \sup_{s} \left\| \frac{d\mathbf{g}(s)}{ds} \right\|_2 \\
+= \sup_{s} \left\| \frac{\partial \ell}{\partial \mathcal{P}} \frac{d\mathbf{J}_{phy}(s)}{ds} \frac{\partial \hat{\mathbf{Z}}}{\partial \theta} \right\|_2.
+\end{equation}
+
+Substituting the derivative of the physical Jacobian into this definition, we obtain:
+\begin{equation}
+K_{\text{t}} \propto \sup_{s} |\delta(s-s_c)| \to \infty.
+\end{equation}
+
+An unbounded Lipschitz constant formally implies that non-smooth structural changes create non-differentiable singular points in the optimization landscape. This abrupt mutation causes abrupt changes in the gradient direction and magnitude, which may cause abrupt gradient variations under mixed-topology training.\hfill $\blacksquare$
+
+\subsection{Proof of Theorem~\ref{thm:stability}}
+
+Under the proposed representation, the physical operator $\mathcal{P}(\hat{\mathbf{Z}},\boldsymbol{\tau})$ is a fixed-dimensional mapping parameterized by $\boldsymbol{\tau}$. The topology-dependent matrices become affine functions of $\boldsymbol{\tau}$, e.g.,
+\begin{equation}
+\mathbf{Y}(\boldsymbol{\tau})=\mathbf{A}^{\top}\operatorname{diag}(\boldsymbol{\tau}\odot\mathbf{y})\mathbf{A},
+\end{equation}
+so $\mathcal{P}$ and its Jacobian $\mathbf{J}_{phy}(\boldsymbol{\tau})$ are affine in $\boldsymbol{\tau}$ under continuous relaxation
+
+Let $\mathbf{v}(\boldsymbol{\tau})=\partial\ell/\partial\mathcal{P}(\boldsymbol{\tau})$. Decomposing the gradient deviation using the product rule of Lipschitz continuity:
+\begin{equation}
+\begin{aligned}
+&\|\mathbf{v}(\boldsymbol{\tau}_1)\mathbf{J}_{phy}(\boldsymbol{\tau}_1)-\mathbf{v}(\boldsymbol{\tau}_2)\mathbf{J}_{phy}(\boldsymbol{\tau}_2)\|_2 \\
+&\leq \underbrace{\|\mathbf{v}(\boldsymbol{\tau}_1)\|_2}_{\leq M_{\ell}}\|\mathbf{J}_{phy}(\boldsymbol{\tau}_1)-\mathbf{J}_{phy}(\boldsymbol{\tau}_2)\|_2 \\
+&\quad +\underbrace{\|\mathbf{J}_{phy}(\boldsymbol{\tau}_2)\|_2}_{\leq M_{phy}}\|\mathbf{v}(\boldsymbol{\tau}_1)-\mathbf{v}(\boldsymbol{\tau}_2)\|_2.
+\end{aligned}
+\label{eq:grad_diff}
+\end{equation}
+
+\begin{equation}
+\|\mathbf{Y}(\boldsymbol{\tau}_1)-\mathbf{Y}(\boldsymbol{\tau}_2)\|_2
+\leq
+\|\mathbf{A}\|_2^2
+\|\mathbf{y}\|_{\infty}
+\|\boldsymbol{\tau}_1-\boldsymbol{\tau}_2\|_2 .
+\end{equation}
+
+Since $\mathcal{P}(\boldsymbol{\tau})$ employs a damped mapping with regularization $\lambda>0$, the operator and its Jacobian are Lipschitz continuous in the affine matrix $\mathbf{Y}(\boldsymbol{\tau})$:
+\begin{align}
+\|\mathbf{J}_{phy}(\boldsymbol{\tau}_1)-\mathbf{J}_{phy}(\boldsymbol{\tau}_2)\|_2
+&\leq L_{J}\cdot\|\mathbf{A}\|_2^2\|\mathbf{y}\|_{\infty}
+\cdot\|\boldsymbol{\tau}_1-\boldsymbol{\tau}_2\|_2,\\
+\|\mathbf{v}(\boldsymbol{\tau}_1)-\mathbf{v}(\boldsymbol{\tau}_2)\|_2
+&\leq L_{\ell}L_{\mathcal{P}}\cdot\|\mathbf{A}\|_2^2\|\mathbf{y}\|_{\infty}
+\cdot\|\boldsymbol{\tau}_1-\boldsymbol{\tau}_2\|_2.
+\end{align}
+
+Substituting these bounds into \eqref{eq:grad_diff} and letting $M_{\theta}=\sup\|\partial\hat{\mathbf{Z}}/\partial\theta\|_2$, we obtain:
+\begin{multline}
+\|\mathbf{g}(\boldsymbol{\tau}_1)-\mathbf{g}(\boldsymbol{\tau}_2)\|_2
+\leq M_{\theta}\big(M_{\ell}L_{J}+M_{phy}L_{\ell}L_{\mathcal{P}}\big)\\
+\cdot\|\mathbf{A}\|_2^2\|\mathbf{y}\|_{\infty}\cdot\|\boldsymbol{\tau}_1-\boldsymbol{\tau}_2\|_2,
+\end{multline}
+which is exactly $K_{\text{p}}\|\boldsymbol{\tau}_1-\boldsymbol{\tau}_2\|_2$ with $K_{\text{p}}$ given by Theorem~\ref{thm:stability}. Since $\mathbf{A}$ and $\mathbf{y}$ are fixed by the physical network and all neural-network-related constants are bounded, $K_{\text{p}}<\infty$. For the loop impedance equation, the derivation follows analogously by replacing the node-branch incidence matrix $A$ with the loop matrix $B$, and the branch admittance vector $\mathbf{y}$ with the branch impedance vector $\mathbf{z}$.\hfill $\blacksquare$
+
+% ============================================================
+\section{Gradient Propagation Analysis via Lipschitz Constants}
+% ============================================================
+
+% Notation: P_a — K-step physics-operator mapping; M_a — single-step correction map;
+% J_a(Z) — Jacobian at state Z; H_{d,a} — damped Hessian; J_{0,a} — reference Jacobian;
+% α — step size; ρ_a — local contraction factor; Z† — reference point;
+% Z^{(k)} — state at step k; L_a — Lipschitz constant of J_a(Z).
+
+For an operator with corrected state $\mathbf{Z}^{*}=\mathcal{P}_{a}(\hat{\mathbf{Z}})$, the gradient with respect to any network parameter $\psi_i$ is
+\begin{equation}
+\frac{\partial\mathcal{L}}{\partial\psi_i}
+=\Big(\frac{\partial\hat{\mathbf{Z}}}{\partial\psi_i}\Big)^{\!T}\!
+\Big(\frac{\partial\mathcal{P}_{a}}{\partial\hat{\mathbf{Z}}}\Big)^{\!T}
+\frac{\partial\mathcal{L}}{\partial\mathbf{Z}^{*}},
+\end{equation}
+so training is governed by $\partial\mathcal{P}_{a}/\partial\hat{\mathbf{Z}}$. The $K$-step mapping $\mathcal{P}_{a}$ is a composition of single-step correction maps $\mathcal{M}_{a}$, hence the analysis reduces to the variation of $\partial\mathcal{M}_{a}/\partial\mathbf{Z}$, which in turn depends on the variation of the formulation Jacobian $\mathbf{J}_{a}(\mathbf{Z})$.
+
+Assume $\mathbf{J}_{a}(\mathbf{Z})$ is Lipschitz continuous on the operating region $S$:
+\begin{equation}
+\|\mathbf{J}_{a}(\mathbf{Z}_1)-\mathbf{J}_{a}(\mathbf{Z}_2)\|
+\leq L_{a}\|\mathbf{Z}_1-\mathbf{Z}_2\|,
+\quad\forall\,\mathbf{Z}_1,\mathbf{Z}_2\in S.
+\end{equation}
+
+Then for any reference point $\mathbf{Z}^\dagger\in S$,
+\begin{equation}
+\|\mathbf{J}_{a}(\mathbf{Z})-\mathbf{J}_{a}(\mathbf{Z}^\dagger)\|\leq L_{a}\|\mathbf{Z}-\mathbf{Z}^\dagger\|.
+\end{equation}
+A smaller $L_{a}$ means the Jacobian varies more slowly, so the fixed Jacobian stays accurate over a larger neighborhood.
+
+The deviation of the single-step correction Jacobian from its local linear model $\mathbf{I}-\alpha\mathbf{H}_{d,a}^{-1}\mathbf{J}_{0,a}^{\top}\mathbf{J}_{a}(\mathbf{Z}^\dagger)$ is bounded by
+\begin{multline}
+\Big\|\frac{\partial\mathcal{M}_{a}(\mathbf{Z})}{\partial\mathbf{Z}}
+-\big(\mathbf{I}-\alpha\mathbf{H}_{d,a}^{-1}\mathbf{J}_{0,a}^{\top}\mathbf{J}_{a}(\mathbf{Z}^\dagger)\big)\Big\| \\
+\leq\alpha\|\mathbf{H}_{d,a}^{-1}\mathbf{J}_{0,a}^{\top}\|\,L_{a}\,\|\mathbf{Z}-\mathbf{Z}^\dagger\|.
+\end{multline}
+
+For the $K$-step operator, this bound propagates multiplicatively:
+\begin{multline}
+\Big\|\frac{\partial\mathcal{P}_{a}}{\partial\hat{\mathbf{Z}}}\Big\|
+\leq\prod_{k=0}^{K-1}
+\Big(\rho_{a}
++\alpha\|\mathbf{H}_{d,a}^{-1}\mathbf{J}_{0,a}^{\top}\|\,L_{a}
+\|\mathbf{Z}^{(k)}-\mathbf{Z}^\dagger\|\Big),
+\end{multline}
+where $\rho_{a}=\|\mathbf{I}-\alpha\mathbf{H}_{d,a}^{-1}\mathbf{J}_{0,a}^{\top}\mathbf{J}_{a}(\mathbf{Z}^\dagger)\|$. Thus, a smaller $L_{a}$ yields tighter error accumulation across steps, more accurate gradient propagation, and more stable end-to-end training. This provides the theoretical basis for comparing $L_{a}$ across different power flow formulations.
+
+% ============================================================
+\section{Theoretical Comparison of Effective Jacobian Lipschitz Constants}
+\label{appendix:lipschitz_comparison}
+% ============================================================
+
+This section provides a theoretical explanation for why the loop-based formulation, when used as a differentiable physics operator, tends to yield a smaller effective Jacobian Lipschitz constant than the conventional node-based formulation.
+
+Let $\mathcal{R}(\cdot)$ denote the real-valued representation of complex variables.
+For a given PF formulation $a\in\{\mathrm{node},\mathrm{loop}\}$, define the real-valued residual mapping as
+\begin{equation}
+\mathbf{F}_{a}(\mathbf{Z})
+=
+\mathcal{R}
+\left(
+\begin{bmatrix}
+\mathbf{f}_{1}^{a}\\
+\mathbf{f}_{2}^{a}
+\end{bmatrix}
+\right),
+\end{equation}
+and let
+\begin{equation}
+\mathbf{J}_{a}(\mathbf{Z})
+=
+\nabla_{\mathbf{Z}}\mathbf{F}_{a}(\mathbf{Z})
+\end{equation}
+be its Jacobian. The effective Jacobian Lipschitz constant over the operating domain $\Omega$ is defined as
+\begin{equation}
+L_{a}^{\mathrm{eff}}
+=
+\sup_{\mathbf{Z}_1,\mathbf{Z}_2\in\Omega}
+\frac{
+\|\mathbf{J}_{a}(\mathbf{Z}_1)-\mathbf{J}_{a}(\mathbf{Z}_2)\|_2
+}{
+\|\mathbf{Z}_1-\mathbf{Z}_2\|_2
+}.
+\end{equation}
+If $\mathbf{F}_{a}$ is twice differentiable on $\Omega$, then
+\begin{equation}
+L_{a}^{\mathrm{eff}}
+\leq
+\sup_{\mathbf{Z}\in\Omega}
+\|\nabla^2\mathbf{F}_{a}(\mathbf{Z})\|_2.
+\end{equation}
+
+\begin{assumption}[Bounded operating domain]
+\label{assump:bounded}
+The operating domain $\Omega$ satisfies
+\begin{equation}
+V_{\min}\leq |U_i|\leq V_{\max},\quad
+\|S_b\|_2\leq S_{b,\max},
+\end{equation}
+where $V_{\min}>0$. In addition, under the unified topology representation, the matrices $\mathbf{A}$, $\tilde{\mathbf{A}}$, $\mathbf{Y}_l$, $\mathbf{B}$, $\mathbf{Z}_b$, and $\mathbf{C}_f$ are fixed and bounded. Since $S_f$ is contained in the unified branch-power vector $S_b$, the boundedness of $S_b$ implies $\|S_f\|_2\leq S_{b,\max}$.
+\end{assumption}
+
+\begin{proposition}[Upper bound for the node-based formulation]
+\label{prop:nodal_bound}
+For the node-based residual mapping
+\begin{equation}
+\mathbf{F}_{\mathrm{node}}
+=
+\mathcal{R}
+\left(
+\begin{bmatrix}
+\operatorname{diag}(U_n)(\mathbf{A}\mathbf{Y}_l\mathbf{A}^TU_n)^*+S_n\\
+S_l-\mathbf{C}_{\mathrm{f}}U_n(\mathbf{Y}_l\mathbf{A}^TU_n)^*
+\end{bmatrix}
+\right),
+\end{equation}
+the effective Jacobian Lipschitz constant admits the upper bound
+\begin{equation}
+L_{\mathrm{node}}^{\mathrm{eff}}
+\leq C_1\|\mathbf{A}\mathbf{Y}_l\mathbf{A}^T\|_2
++ C_2\|\mathbf{C}_{\mathrm{f}}\|_2\|\mathbf{Y}_l\mathbf{A}^T\|_2,
+\end{equation}
+where $C_1$ and $C_2$ are constants determined by the complex-to-real embedding and the selected norm.
+\end{proposition}
+
+\begin{proof}
+The first node-based residual contains the voltage-admittance quadratic mapping
+\begin{equation}
+\operatorname{diag}(U_n)(\mathbf{Y}_{\mathrm{bus}}U_n)^*,
+\quad
+\mathbf{Y}_{\mathrm{bus}}=\mathbf{A}\mathbf{Y}_l\mathbf{A}^T.
+\end{equation}
+In real coordinates, this term is bilinear in the real and imaginary parts of $U_n$. Hence, its second derivative is independent of $U_n$ and is bounded by the coefficient matrix:
+\begin{equation}
+\|\nabla^2 \mathbf{f}_{1}^{\mathrm{node}}\|_2
+\leq
+C_1\|\mathbf{A}\mathbf{Y}_l\mathbf{A}^T\|_2.
+\end{equation}
+The term $S_n$ is linear and does not contribute to the Hessian.
+
+Similarly, the second node-based residual contains
+\begin{equation}
+\mathbf{C}_{\mathrm{f}}U_n(\mathbf{Y}_l\mathbf{A}^TU_n)^*,
+\end{equation}
+which is also bilinear in the voltage variables. Therefore,
+\begin{equation}
+\|\nabla^2 \mathbf{f}_{2}^{\mathrm{node}}\|_2
+\leq
+C_2\|\mathbf{C}_{\mathrm{f}}\|_2\|\mathbf{Y}_l\mathbf{A}^T\|_2.
+\end{equation}
+The branch power term $S_l$ is linear and has zero Hessian. Combining the two residual components gives the stated bound.\hfill $\blacksquare$
+\end{proof}
+
+\begin{proposition}[Upper bound for the loop-based formulation]
+\label{prop:loop_bound}
+For the loop-based residual mapping
+\begin{equation}
+\mathbf{F}_{\mathrm{loop}}
+=
+\mathcal{R}
+\left(
+\begin{bmatrix}
+\tilde{\mathbf{A}}\operatorname{diag}(\mathbf{C}_fU_n)^{-1}S_b\\
+\mathbf{B}\mathbf{Z}_b[\operatorname{diag}(\mathbf{C}_fU_n)^{-1}S_f]^*+\mathbf{B}U_s
+\end{bmatrix}
+\right),
+\end{equation}
+the effective Jacobian Lipschitz constant admits the upper bound
+\begin{equation}
+\begin{aligned}
+L_{\mathrm{loop}}^{\mathrm{eff}}
+\leq\;&
+C_3\|\tilde{\mathbf{A}}\|_2
+\left(
+\frac{\|\mathbf{C}_f\|_2}{V_{\min}^{2}}
++
+\frac{S_{b,\max}\|\mathbf{C}_f\|_2^{2}}{V_{\min}^{3}}
+\right)  \\
+&+
+C_4\|\mathbf{B}\mathbf{Z}_b\|_2
+\left(
+\frac{\|\mathbf{C}_f\|_2}{V_{\min}^{2}}
++
+\frac{S_{b,\max}\|\mathbf{C}_f\|_2^{2}}{V_{\min}^{3}}
+\right),
+\end{aligned}
+\end{equation}
+where $C_3$ and $C_4$ are constants determined by the real-valued embedding and norm equivalence.
+\end{proposition}
+
+\begin{proof}
+Let
+\begin{equation}
+\mathbf{U}_f=\mathbf{C}_fU_n.
+\end{equation}
+Both loop residual components share the nonlinear mapping
+\begin{equation}
+\boldsymbol{\Phi}(U_f,S)=\operatorname{diag}(U_f)^{-1}S.
+\end{equation}
+For each branch component,
+\begin{equation}
+\phi_k(U_{f,k},S_k)=\frac{S_k}{U_{f,k}}.
+\end{equation}
+By Assumption~\ref{assump:bounded}, $|U_{f,k}|\geq V_{\min}>0$. Therefore,
+\begin{equation}
+\left|
+\frac{\partial^2 \phi_k}{\partial S_k\partial U_{f,k}}
+\right|
+\leq
+\frac{c}{V_{\min}^{2}},
+\end{equation}
+and
+\begin{equation}
+\left|
+\frac{\partial^2 \phi_k}{\partial U_{f,k}^{2}}
+\right|
+\leq
+\frac{c|S_k|}{V_{\min}^{3}},
+\end{equation}
+where \(c\) is a norm-equivalence constant introduced by the complex-to-real representation. Since $\mathbf{U}_f=\mathbf{C}_fU_n$, the chain rule gives
+\begin{equation}
+\|\nabla^2\boldsymbol{\Phi}(U_f,S)\|_2
+\leq
+C
+\left(
+\frac{\|\mathbf{C}_f\|_2}{V_{\min}^{2}}
++
+\frac{\|S\|_2\|\mathbf{C}_f\|_2^{2}}{V_{\min}^{3}}
+\right).
+\end{equation}
+
+For the first loop residual, multiplication by the linear matrix $\tilde{\mathbf{A}}$ yields
+\begin{equation}
+\|\nabla^2 \mathbf{f}_{1}^{\mathrm{loop}}\|_2
+\leq
+C_3\|\tilde{\mathbf{A}}\|_2
+\left(
+\frac{\|\mathbf{C}_f\|_2}{V_{\min}^{2}}
++
+\frac{S_{b,\max}\|\mathbf{C}_f\|_2^{2}}{V_{\min}^{3}}
+\right).
+\end{equation}
+For the second loop residual, multiplication by the linear matrix $\mathbf{B}\mathbf{Z}_b$ yields
+\begin{equation}
+\|\nabla^2 \mathbf{f}_{2}^{\mathrm{loop}}\|_2
+\leq
+C_4\|\mathbf{B}\mathbf{Z}_b\|_2
+\left(
+\frac{\|\mathbf{C}_f\|_2}{V_{\min}^{2}}
++
+\frac{S_{b,\max}\|\mathbf{C}_f\|_2^{2}}{V_{\min}^{3}}
+\right).
+\end{equation}
+Under the unified topology representation, $\mathbf{B}U_s$ is affine with respect to the voltage variables and therefore contributes zero to the Hessian. Combining the two residual components gives the stated bound.\hfill $\blacksquare$
+\end{proof}
+
+\begin{corollary}[Comparison of theoretical upper bounds]
+\label{cor:loop_smaller}
+Under Assumption~\ref{assump:bounded}, the node-based formulation has an effective Lipschitz upper bound governed by the admittance-weighted quadratic voltage mappings, whereas the loop-based formulation has an effective Lipschitz upper bound governed by inverse sending-end voltage terms and branch-loop linear mappings. If
+\begin{equation}
+\begin{aligned}
+&
+C_3\|\tilde{\mathbf{A}}\|_2
+\left(
+\frac{\|\mathbf{C}_f\|_2}{V_{\min}^{2}}
++
+\frac{S_{b,\max}\|\mathbf{C}_f\|_2^{2}}{V_{\min}^{3}}
+\right)  \\
+&
++C_4\|\mathbf{B}\mathbf{Z}_b\|_2
+\left(
+\frac{\|\mathbf{C}_f\|_2}{V_{\min}^{2}}
++\frac{S_{b,\max}\|\mathbf{C}_f\|_2^{2}}{V_{\min}^{3}}
+\right)  \\
+&<
+C_1\|\mathbf{A}\mathbf{Y}_l\mathbf{A}^T\|_2
++
+C_2\|\mathbf{C}_{\mathrm{f}}\|_2\|\mathbf{Y}_l\mathbf{A}^T\|_2,
+\end{aligned}
+\end{equation}
+then the loop-based formulation admits a smaller theoretical upper bound on $L_a^{\mathrm{eff}}$ than the node-based formulation.
+\end{corollary}
+
+\begin{remark}
+The node-based formulation contains admittance-weighted quadratic voltage terms, whose Hessian is governed by $\mathbf{A}\mathbf{Y}_l\mathbf{A}^T$ and $\mathbf{Y}_l\mathbf{A}^T$. In per-unit power system models, branch impedances are typically small quantities, so the corresponding admittance weights often have larger numerical magnitudes. This tends to make the nodal residual more sensitive to operating-point and topology-induced perturbations. In contrast, the loop-based formulation expresses the constraints through branch-loop voltage balance, where the linear weighting is associated with branch impedances and the main nonlinearity comes from the inverse sending-end voltage term. Since this inverse-voltage nonlinearity is bounded when $V_{\min}>0$, the loop-based formulation yields a smoother residual mapping under normal operating conditions. This provides a theoretical explanation for the empirical observation that LFPO exhibits a smaller effective Jacobian Lipschitz constant, smoother residual correction, and more stable gradient propagation than node-based alternatives.
+\end{remark}
+
+\end{document}
